@@ -6,6 +6,15 @@ Description: Issue complex voice commands to Cozmo, and watch him execute them.
 More informations: https://github.com/rizal72/Cozmo-Voice-Commands
 License: GNU
 '''
+
+'''
+Japanese segmentation and annotation makes use of Masato Hagiwara's Rakuten MA.
+RakutenMA Python port by Yukino Ikegami (https://pypi.python.org/pypi/rakutenma).
+For both versions: Apache License version 2.0
+Rakuten MA Python (c) 2015- Yukino Ikegami. All Rights Reserved.
+Rakuten MA (original) (c) 2014 Rakuten NLP Project. All Rights Reserved.
+'''
+
 import sys
 import os
 import asyncio
@@ -17,7 +26,7 @@ import cozmo
 
 try:
     from termcolor import colored, cprint
-    from pynput.keyboard import Key, Listener
+    from pynput.keyboard import Key, Listener, KeyCode
     import speech_recognition as sr
 except ImportError:
     sys.exit('some packages are required, install them doing: `pip3 install --user termcolor SpeechRecognition PyAudio Pynput` to run this script.\nIf you are on linux do: `sudo apt-get install flac portaudio19-dev python-all-dev python3-all-dev && sudo pip3 install Pynput pyaudio`')
@@ -28,11 +37,14 @@ from . import voice_commands
 version = "Version 0.6.8"
 title = "Cozmo-Voice-Commands (CvC) - " + version
 author =" - Riccardo Sallusti (http://riccardosallusti.it)"
+ja_author = "Erik McGuire (http://erikmcguire.github.io)"
 log = False
 wait_for_shift = True
 lang = None
 lang_data = None
-commands_activate = ["cozmo", "robot", "cosmo", "cosimo", "cosma", "cosima", "kosmos", "cosmos", "cosmic", "osmo", "kosovo", "peau", "kosmo", "kozmo", "gizmo"]
+combinations = [{Key.ctrl_l, KeyCode(char='c')}, {Key.ctrl_r, KeyCode(char='c')}]
+current = set()
+commands_activate = ["コズモ", "コスモ", "コスモス", "ロボット", "cozmo", "robot", "cosmo", "cosimo", "cosma", "cosima", "kosmos", "cosmos", "cosmic", "osmo", "kosovo", "peau", "kosmo", "kozmo", "gizmo"]
 vc = None
 languages = []
 
@@ -65,11 +77,19 @@ def run(robot: cozmo.robot.Robot):
         #print('{0} pressed'.format(key))
         if key == Key.shift_l or key == Key.shift_r:
             listen(robot)
+        if any(key in combo for combo in combinations):
+            current.add(key)
+            if any(all(k in current for k in combo) for combo in combinations):
+                sys.exit()
 
     def on_release(key):
         #print('{0} release'.format(key))
         if key == Key.shift_l or key == Key.shift_r:
             #listen(robot)
+            pass
+        try:
+            current.remove(key)
+        except KeyError:
             pass
 
     if robot:
@@ -90,7 +110,7 @@ def run(robot: cozmo.robot.Robot):
             while 1:
                 listen(robot)
 
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         print("")
         cprint("Exit requested by user", "yellow")
 
@@ -105,7 +125,7 @@ def load_jsons():
         print("Package Location: " + package_location + "\nRelative location: " + relative_location)
 
     for file in glob.glob(absolute_location):
-        with open(file) as json_file:
+        with open(file,encoding='utf8') as json_file:
             languages.append(json.load(json_file))
             if (log):
                 cprint("loaded: " + str(file) + " ", "yellow")
@@ -194,7 +214,7 @@ def listen(robot: cozmo.robot.Robot):
 
         '''LISTENING'''
         try:
-            audio = recognizer.listen(source, timeout = 5)
+            audio = recognizer.listen(source, timeout = 10)
         except sr.WaitTimeoutError:
             cprint("Timeout...", "red")
             if robot:
@@ -211,16 +231,49 @@ def listen(robot: cozmo.robot.Robot):
         try:
             '''for testing purposes, we're just using the default API key
             to use another API key, change key=None to your API key'''
-            recognized = recognizer.recognize_google(audio, key=None, language=lang_data['lang_ext']).lower() #GOOGLE
-            #recognized = recognizer.recognize_wit(audio, key=WIT_AI_KEY_EN) #WIT
-            #recognized = recognizer.recognize_sphinx(audio, language=lang_ext).lower() #SPINX
-            print("You said: " + recognized)
+            if lang_data['lang_ext'] == "ja-JP":
+                # Use alternatives to offset low context homonym disambiguation issues complicating recognition.
+                alts = recognizer.recognize_google(audio, key=None, language=lang_data['lang_ext'], show_all=True) #GOOGLE
+                recognized1 = alts["alternative"][0]["transcript"]
+                recognized2 = alts["alternative"][1]["transcript"]
+            else:
+                recognized = recognizer.recognize_google(audio, key=None, language=lang_data['lang_ext']).lower() #GOOGLE
+                #recognized = recognizer.recognize_wit(audio, key=WIT_AI_KEY_EN) #WIT
+                #recognized = recognizer.recognize_sphinx(audio, language=lang_ext).lower() #SPINX
+            if lang_data['lang_ext'] == "ja-JP":
+                print("You said either: {} or:  {}".format(recognized1.encode('utf8').decode('utf8', errors='ignore'), recognized2.encode('utf8').decode('utf8', errors='ignore')))
+            else:
+                print("You said: " + recognized)
 
             '''Check if one of the activation commands is in the recognized string'''
-            found_command = set(commands_activate).intersection(recognized.split())
+            if lang_data['lang_ext'] == "ja-JP":
+                from cvc.rakutenma import RakutenMA
+                rma = RakutenMA(phi=1024, c=0.007812)
+                tD, tF = os.path.split(__file__)
+                jSon = os.path.join(tD, 'model_ja.min.json')
+                rma.load(jSon)
+                recognized = recognized1
+                results = rma.tokenize(recognized)
+                seg_list = [r for r, s in results]
+                found_command = set(commands_activate).intersection(seg_list)
+                seg_list2 = []
+                try:
+                    results2 = rma.tokenize(recognized2)
+                    seg_list2 = [r for r, s in results2]
+                except:
+                    pass
+                if seg_list2 and not found_command:
+                    # Try finding wake word in alt result
+                    found_command = set(commands_activate).intersection(seg_list2)
+            else:
+                found_command = set(commands_activate).intersection(recognized.split())
             if found_command:
                 cprint("Action command recognized: " + str(found_command), "green")
-                cmd_funcs, cmd_args = extract_commands_from_string(recognized) #check if a corresponding command exists
+                if seg_list2:
+                    # Concatenate alternative commands.
+                    # TODO: Remove repeated commands with multiple cooordinating "それから" in alternatives.
+                    recognized += " " + recognized2
+                cmd_funcs, cmd_args = extract_commands_from_string(recognized.encode('utf8').decode('utf8', errors='ignore')) #check if a corresponding command exists
                 executeCommands(robot, cmd_funcs, cmd_args)
             else:
                 cprint("You did not say the magic words: " + commands_activate[0] + ", " + commands_activate[1], "red")
@@ -274,7 +327,6 @@ def parse_arguments():
     if log:
         print ('Arguments list:', str(sys.argv[1:]))
 
-
 def prompt(id = 1):
     if id == 1 and wait_for_shift:
         cprint(lang_data['text_wait'], "green", attrs=['bold'])
@@ -300,7 +352,7 @@ def printSupportedCommands():
         cprint("[ ", "cyan", end="")
         words = command['words']
         for i in range(0, len(words)):
-            cprint(words[i], "cyan", end="")
+            cprint(words[i].encode('utf8').decode('utf8', errors='ignore'), "cyan", end="")
             if i<len(words)-1:
                 cprint(", ", end="")
 
@@ -314,7 +366,10 @@ def get_command(command_name): #iterates json and returns the command and its in
     for i,command in enumerate(commands):
         #cycle through all the words in the commands list and look for one that is contained in the command as a substring!
         for word in command['words']:
-            wordcut = word[0:-1] #getting the word minus the last letter for conjugations
+            if lang_data['lang_ext'] == "ja-JP":
+                wordcut = word
+            else:
+                wordcut = word[0:-1] #getting the word minus the last letter for conjugations
             if wordcut in command_name.lower(): #checking if the word is contained in the command (driv in drive)
                 func_name = commands[i]['action'] #getting the action that corresponds to the spoken command
                 if log:
@@ -331,13 +386,31 @@ def extract_commands_from_string(in_string):
     if log:
         print("splitted sentences: ", sentences)
     for sentence in sentences:
-        words = sentence.split()
+        if lang_data['lang_ext'] == "ja-JP":
+            from cvc.rakutenma import RakutenMA
+            rma = RakutenMA(phi=1024, c=0.007812)
+            tD, tF = os.path.split(__file__)
+            jSon = os.path.join(tD, 'model_ja.min.json')
+            rma.load(jSon)
+            words = []
+            sentences = sentence.split(" ")
+            # Work through compiled alternatives, affix tagged postpositionals where possible.
+            # https://github.com/rakuten-nlp/rakutenma#pos-tag-list-in-japanese-and-correspondence-to-bccwj-tags
+            for sentence in sentences:
+                seg_list = rma.tokenize(sentence)
+                for i, w in enumerate(seg_list):
+                    if len(words) > 1 and "P-" in w[1]:
+                        words[i-1] = words[i-1] + w[0]
+                    else:
+                        words.insert(0, w[0])
+        else:
+            words = sentence.split()
         for i in range(len(words)):
             cmd_func, cmd_index = get_command(words[i])
             if cmd_func:
                 cmd_funcs.append({'index':cmd_index,'command':cmd_func})
-                cmd_arg = words[i + 1:] #this one passes only the words after the command
-                #cmd_arg = words[i:] #this one passes all words included the command
+                #cmd_arg = words[i + 1:] #this one passes only the words after the command
+                cmd_arg = words[i:] #this one passes all words included the command
                 cmd_args.append(cmd_arg)
                 break
     if log:
