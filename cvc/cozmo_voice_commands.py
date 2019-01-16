@@ -42,6 +42,7 @@ log = False
 wait_for_shift = True
 lang = None
 lang_data = None
+mx = -1
 combinations = [{Key.ctrl_l, KeyCode(char='c')}, {Key.ctrl_r, KeyCode(char='c')}]
 current = set()
 commands_activate = ["コズモ", "コスモ", "コスモス", "ロボット", "cozmo", "robot", "cosmo", "cosimo", "cosma", "cosima", "kosmos", "cosmos", "cosmic", "osmo", "kosovo", "peau", "kosmo", "kozmo", "gizmo"]
@@ -193,7 +194,7 @@ def set_data():
 
 
 def listen(robot: cozmo.robot.Robot):
-
+    global mx
     cprint("wait...")
 
     if robot:
@@ -268,13 +269,14 @@ def listen(robot: cozmo.robot.Robot):
                 if seg_list2 and not found_command:
                     # Try finding wake word in alt result
                     found_command = set(commands_activate).intersection(seg_list2)
+                # USe to remove repeated commands with multiple cooordinating "それから" in alternatives.
+                mx = max(recognized.count(lang_data['separator']), recognized2.count(lang_data['separator']))
             else:
                 found_command = set(commands_activate).intersection(recognized.split())
             if found_command:
                 cprint("Action command recognized: " + str(found_command), "green")
                 if seg_list2:
                     # Concatenate alternative commands.
-                    # TODO: Remove repeated commands with multiple cooordinating "それから" in alternatives.
                     recognized += recognized2
                 cmd_funcs, cmd_args = extract_commands_from_string(recognized.encode('utf8').decode('utf8', errors='ignore')) #check if a corresponding command exists
                 executeCommands(robot, cmd_funcs, cmd_args)
@@ -383,7 +385,9 @@ def get_command(command_name): #iterates json and returns the command and its in
 
 def extract_commands_from_string(in_string):
     '''Separate inString at each "and" or "then", loop through until we find commands, return tuples of cmd_func and cmd_args'''
-    sentences = in_string.split(" " + lang_data['separator'] + " ")
+    global mx
+    # Limit split to avoid duplicate conjunctives if ja-JP w/ alts, else mx == -1 (unlimited).
+    sentences = in_string.split(" " + lang_data['separator'] + " ", mx)
     cmd_funcs = []
     cmd_args = []
     if log:
@@ -396,11 +400,11 @@ def extract_commands_from_string(in_string):
             jSon = os.path.join(tD, 'model_ja.min.json')
             rma.load(jSon)
             words = []
-            sentences = sentence.split(" ")
+            sents = sentence.split(" ")
             # Work through compiled alternatives, affix tagged postpositionals where possible.
             # https://github.com/rakuten-nlp/rakutenma#pos-tag-list-in-japanese-and-correspondence-to-bccwj-tags
-            for sentence in sentences:
-                seg_list = rma.tokenize(sentence)
+            for s in sents:
+                seg_list = rma.tokenize(s)
                 for i, w in enumerate(seg_list):
                     if i >= 1 and "P-" in w[1]:
                         words[-1] = words[-1] + w[0]
