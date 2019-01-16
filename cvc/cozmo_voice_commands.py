@@ -235,7 +235,10 @@ def listen(robot: cozmo.robot.Robot):
                 # Use alternatives to offset low context homonym disambiguation issues complicating recognition.
                 alts = recognizer.recognize_google(audio, key=None, language=lang_data['lang_ext'], show_all=True) #GOOGLE
                 recognized1 = alts["alternative"][0]["transcript"]
-                recognized2 = alts["alternative"][1]["transcript"]
+                try:
+                    recognized2 = " " + alts["alternative"][1]["transcript"]
+                except:
+                    recognized2 = " "
             else:
                 recognized = recognizer.recognize_google(audio, key=None, language=lang_data['lang_ext']).lower() #GOOGLE
                 #recognized = recognizer.recognize_wit(audio, key=WIT_AI_KEY_EN) #WIT
@@ -272,7 +275,7 @@ def listen(robot: cozmo.robot.Robot):
                 if seg_list2:
                     # Concatenate alternative commands.
                     # TODO: Remove repeated commands with multiple cooordinating "それから" in alternatives.
-                    recognized += " " + recognized2
+                    recognized += recognized2
                 cmd_funcs, cmd_args = extract_commands_from_string(recognized.encode('utf8').decode('utf8', errors='ignore')) #check if a corresponding command exists
                 executeCommands(robot, cmd_funcs, cmd_args)
             else:
