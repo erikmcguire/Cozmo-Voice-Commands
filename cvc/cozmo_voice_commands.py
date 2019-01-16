@@ -403,7 +403,7 @@ def extract_commands_from_string(in_string):
                 seg_list = rma.tokenize(sentence)
                 for i, w in enumerate(seg_list):
                     if i >= 1 and "P-" in w[1]:
-                        words[i] = words[i] + w[0]
+                        words[-1] = words[-1] + w[0]
                     else:
                         words.append(w[0])
         else:
