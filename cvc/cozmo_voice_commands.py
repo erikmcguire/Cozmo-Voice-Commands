@@ -399,10 +399,10 @@ def extract_commands_from_string(in_string):
             for sentence in sentences:
                 seg_list = rma.tokenize(sentence)
                 for i, w in enumerate(seg_list):
-                    if len(words) > 1 and "P-" in w[1]:
-                        words[i-1] = words[i-1] + w[0]
+                    if i >= 1 and "P-" in w[1]:
+                        words[i] = words[i] + w[0]
                     else:
-                        words.insert(0, w[0])
+                        words.append(w[0])
         else:
             words = sentence.split()
         for i in range(len(words)):
