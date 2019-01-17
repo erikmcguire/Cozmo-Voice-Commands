@@ -269,7 +269,7 @@ def listen(robot: cozmo.robot.Robot):
                 if seg_list2 and not found_command:
                     # Try finding wake word in alt result
                     found_command = set(commands_activate).intersection(seg_list2)
-                # USe to remove repeated commands with multiple cooordinating "それから" in alternatives.
+                # Use to remove repeated commands with multiple cooordinating "それから" in alternatives.
                 mx = max(recognized.count(lang_data['separator']), recognized2.count(lang_data['separator']))
             else:
                 found_command = set(commands_activate).intersection(recognized.split())
